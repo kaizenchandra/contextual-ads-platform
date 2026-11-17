@@ -8,9 +8,11 @@ import org.springframework.stereotype.Service;
 @Service
 class Fraud {
     private final JdbcTemplate db;
+    private final Treasury treasury;
 
-    Fraud(JdbcTemplate db) {
+    Fraud(JdbcTemplate db,Treasury treasury) {
         this.db = db;
+        this.treasury=treasury;
     }
 
     // Called inside the decision-locked measurement transaction. No identifiers or IP profiles.
@@ -21,7 +23,12 @@ class Fraud {
         if (kind.equals("impression") && attempts >= 10) signal(decision, "REPEATED_IMPRESSIONS");
     }
 
+    private void publisherLock(UUID decision){
+        var row=db.queryForMap("select coalesce(d.publisher_subject,p.owner_name) publisher from decisions d join pages p on p.id=d.page_id where d.id=?",decision);
+        treasury.lock("PUBLISHER",(String)row.get("publisher"));
+    }
     void signal(UUID decision, String rule) {
+        publisherLock(decision);
         int fresh = db.update("insert into fraud_signals(decision_id,rule) values(?,?) on conflict do nothing", decision, rule);
         if (fresh == 1)
             db.update("insert into outbox(event_type,aggregate_id) values('FraudSignalTriggered',?)", decision);
@@ -38,6 +45,8 @@ class Fraud {
 
     @org.springframework.transaction.annotation.Transactional
     public void assess(UUID decision) {
+        db.queryForMap("select id from decisions where id=? for update",decision);
+        publisherLock(decision);
         var old = db.queryForList("select status from fraud_cases where decision_id=?", String.class, decision);
         List<String> rules = rules(decision);
         db.update("insert into fraud_cases(decision_id,status,rules) values(?,?,?) on conflict(decision_id) do update set rules=excluded.rules,status=case when fraud_cases.status='VALID' and excluded.rules<>'' then 'DISPUTED' when fraud_cases.status='PENDING' and excluded.rules<>'' then 'REVIEW' else fraud_cases.status end,updated=now()", decision, rules.isEmpty() ? "PENDING" : "REVIEW", String.join(",", rules));

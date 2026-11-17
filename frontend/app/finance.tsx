@@ -36,7 +36,7 @@ export default function Finance({role}: { role: string }) {
     if (role === 'publisher') return null;
     return <section><h2>{role === 'admin' ? 'Traffic review and billing' : 'Validated billing ledger'}</h2><p>Client
         measurements are provisional. Only an administrator who has reviewed independent evidence can authorize a
-        charge. Invoices and payments are separate and are not issued here.</p><p role="status"
+        charge. Invoices, observed bank transactions and publisher settlements are managed in the treasury section.</p><p role="status"
                                                                                   aria-label="Billing status">{message}</p>
         <button onClick={load}>Refresh billing</button>
         {role === 'admin' && <><label>Review evidence / replay reason<textarea value={reason}

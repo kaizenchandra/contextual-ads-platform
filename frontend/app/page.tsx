@@ -2,6 +2,8 @@
 import {useEffect, useRef, useState} from 'react';
 import {signIn, signOut} from 'next-auth/react';
 import Finance from './finance';
+import Treasury from './treasury';
+import Creatives from './creatives';
 
 type Row = Record<string, unknown>;
 type Decision = {
@@ -9,6 +11,7 @@ type Decision = {
     headline?: string;
     advertiser?: string;
     impressionToken?: string;
+    renderUrl?: string;
     clickToken?: string
 };
 const articles = [['Electric vehicles and charging', 'Electric vehicle battery charging infrastructure makes electric transport practical.'], ['Java development', 'Java spring jvm developer code practices for reliable services.'], ['Cloud infrastructure', 'Cloud kubernetes infrastructure server deployment.'], ['Travel destinations', 'Travel hotel destination holiday planning.'], ['Fitness equipment', 'Fitness exercise gym training equipment.'], ['Home improvement', 'Home renovation kitchen garden projects.']];
@@ -57,23 +60,6 @@ export default function Home() {
         setRows([]);
         setMessage('');
     }, [role]);
-    useEffect(() => {
-        if (!ad?.impressionToken || !slot.current) return;
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        const observer = new IntersectionObserver(([e]) => {
-            if (timer) clearTimeout(timer);
-            if (e.intersectionRatio >= .5 && document.visibilityState === 'visible') timer = setTimeout(() => {
-                api('ads/impressions', {token: ad.impressionToken}, 'publisher').then(() => setMessage('Viewability signal recorded; human attention is unverified.')).catch(e => setMessage(String(e)));
-                observer.disconnect();
-            }, 1000);
-        }, {threshold: [.5]});
-        observer.observe(slot.current);
-        return () => {
-            observer.disconnect();
-            if (timer) clearTimeout(timer);
-        };
-    }, [ad]);
-
     async function serve() {
         try {
             const page = await api('context/pages', {
@@ -207,16 +193,9 @@ export default function Home() {
             }}>{articles.map((a, i) => <option value={i} key={i}>{a[0]}</option>)}</select></label>
             <h3>{articles[article][0]}</h3><p>{articles[article][1]}</p>
             <button onClick={serve}>Analyze content and request an ad</button>
-            <aside ref={slot} aria-label="Sponsored placement"><strong>Sponsored</strong>{ad?.filled ? <>
-                    <h3>{ad.headline}</h3><p>Advertiser: {ad.advertiser}</p><a rel="sponsored noreferrer"
-                                                                               href={'/api/ads/click/' + ad.clickToken}
-                                                                               onClick={async e => {
-                                                                                   e.preventDefault();
-                                                                                   window.location.href = (process.env.NEXT_PUBLIC_TRACKING_URL || 'http://localhost:8086') + '/api/v1/ads/click/' + ad.clickToken;
-                                                                               }}>Visit advertiser ↗</a></> :
-                <p>{ad ? 'No eligible campaign.' : 'Request an advertisement to preview this placement.'}</p>}</aside>
+            <aside ref={slot} aria-label="Sponsored placement"><strong>Sponsored</strong>{ad?.filled ? <iframe title="Sponsored advertisement" src={ad.renderUrl} sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" width="100%" height="380" style={{border:0}}/> : <p>{ad ? 'No eligible campaign.' : 'Request an advertisement to preview this placement.'}</p>}</aside>
         </section>
-        <Finance role={role}/>
+        <Creatives role={role}/><Finance role={role}/><Treasury role={role}/>
         <footer>No browser identifiers or cross-site profiles. The selected console view does not grant permissions. The
             API checks your OIDC roles and resource ownership.
         </footer>

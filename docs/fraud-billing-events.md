@@ -1,3 +1,5 @@
+> Invoicing, manual-bank reconciliation and publisher settlement have since been added. See [treasury.md](treasury.md); it supersedes the earlier zero-invoiced/paid and missing-settlement limitations below.
+
 # Fraud validation, billing and durable event delivery
 
 ## Measurement is not a charge

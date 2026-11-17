@@ -12,10 +12,12 @@ import org.springframework.http.HttpStatus;
 class Billing {
     private final JdbcTemplate db;
     private final Fraud fraud;
+    private final Treasury treasury;
 
-    Billing(JdbcTemplate db, Fraud fraud) {
+    Billing(JdbcTemplate db, Fraud fraud, Treasury treasury) {
         this.db = db;
         this.fraud = fraud;
+        this.treasury=treasury;
     }
 
     @Transactional
@@ -29,6 +31,7 @@ class Billing {
         var d = rows.getFirst();
         if (!d.get("state").equals("COMMITTED"))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A committed impression is required");
+        treasury.lock("ADVERTISER",(String)d.get("owner_name"));
         fraud.assess(decision);
         var current = db.queryForMap("select * from fraud_cases where decision_id=? for update", decision);
         String previous = (String) current.get("status");
@@ -49,6 +52,7 @@ class Billing {
             db.update("insert into billing_entries(id,decision_id,campaign_id,advertiser,currency,kind,amount) values(?,?,?,?,?,'REVERSAL',?)", UUID.randomUUID(), decision, d.get("campaign_id"), d.get("owner_name"), d.get("currency"), -((Number) charges.getFirst().get("amount")).longValue());
         } else if (Set.of("VALID", "DISPUTED").contains(previous))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Use REVERSE for an existing charge");
+        if(action.equals("VALIDATE") || action.equals("REVERSE"))treasury.bookRevenue(db.queryForObject("select id from billing_entries where decision_id=? and kind=?",UUID.class,decision,action.equals("VALIDATE")?"CHARGE":"REVERSAL"));
         db.update("update fraud_cases set status=?,updated=now() where decision_id=?", target, decision);
         db.update("insert into financial_audit(id,decision_id,actor,action,reason,old_status,new_status) values(?,?,?,?,?,?,?)", UUID.randomUUID(), decision, actor, action, reason, previous, target);
         db.update("insert into outbox(event_type,aggregate_id) values(?,?)", action.equals("VALIDATE") ? "ChargeValidated" : action.equals("REVERSE") ? "ChargeReversed" : "TrafficInvalidated", decision);

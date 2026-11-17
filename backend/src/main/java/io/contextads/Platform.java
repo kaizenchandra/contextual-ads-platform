@@ -19,12 +19,14 @@ class Platform {
     private final JdbcTemplate db;
     private final Tokens tokens;
     private final Fraud fraud;
+    private final Rendering rendering;
     private final TransactionTemplate tx;
 
-    Platform(JdbcTemplate db, Tokens tokens, Fraud fraud, PlatformTransactionManager manager) {
+    Platform(JdbcTemplate db, Tokens tokens, Fraud fraud, Rendering rendering, PlatformTransactionManager manager) {
         this.db = db;
         this.tokens = tokens;
         this.fraud = fraud;
+        this.rendering=rendering;
         this.tx = new TransactionTemplate(manager);
     }
 
@@ -74,6 +76,9 @@ class Platform {
             // Database wall time, sampled AFTER lock acquisition, defines the admission day/window.
             Instant now = db.queryForObject("select clock_timestamp()", Timestamp.class).toInstant();
             LocalDate day = now.atZone(ZoneOffset.UTC).toLocalDate();
+            var creativeRows=db.queryForList("select * from creatives where id=? and campaign_id=? and status='APPROVED' for share",c.get("current_creative_id"),id);
+            if(creativeRows.isEmpty())continue;
+            var creative=creativeRows.getFirst();
             long bid = ((Number) c.get("bid")).longValue();
             long daily = ((Number) c.get("daily_budget")).longValue();
             if (!c.get("status").equals("ACTIVE") || !Boolean.TRUE.equals(c.get("approved"))) continue;
@@ -89,12 +94,12 @@ class Platform {
             if (admitted == 0) continue;
             db.update("update campaign_daily_budgets set reserved=reserved+? where campaign_id=? and budget_day=?", bid, id, day);
             UUID decision = UUID.randomUUID();
-            db.update("insert into decisions(id,campaign_id,page_id,placement_id,price,expires,budget_day,created,synthetic) values(?,?,?,?,?,?,?,?,?)",
-                    decision, id, page, placement, bid, Timestamp.from(now.plusSeconds(300)), day, Timestamp.from(now), synthetic);
+            db.update("insert into decisions(id,campaign_id,page_id,placement_id,price,expires,budget_day,created,synthetic,publisher_subject,creative_id,creative_headline,creative_description,creative_destination) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    decision, id, page, placement, bid, Timestamp.from(now.plusSeconds(300)), day, Timestamp.from(now), synthetic,context.get("owner_name"),creative.get("id"),creative.get("headline"),creative.get("description"),creative.get("destination"));
             movement(decision, "RESERVE", bid);
             db.update("insert into outbox(event_type,aggregate_id) values('AdDecisionMade',?)", decision);
-            return Map.of("filled", true, "id", decision, "headline", c.get("headline"), "advertiser", c.get("owner_name"),
-                    "priceMinor", bid, "impressionToken", tokens.sign(decision, "impression"), "clickToken", tokens.sign(decision, "click"));
+            return Map.of("filled", true, "id", decision, "headline", creative.get("headline"), "advertiser", c.get("owner_name"),
+                    "renderUrl",rendering.url(decision),"creativeId",creative.get("id"),"format",creative.get("format"),"priceMinor", bid, "impressionToken", tokens.sign(decision, "impression"), "clickToken", tokens.sign(decision, "click"));
         }
         return Map.of("filled", false);
     }
@@ -113,6 +118,7 @@ class Platform {
         if (!Boolean.TRUE.equals(db.queryForObject("select expires>clock_timestamp() from decisions where id=?", Boolean.class, id)))
             throw new IllegalArgumentException("Expired decision");
         if (d.get("state").equals("RELEASED")) throw new IllegalArgumentException("Released decision");
+        if(d.get("creative_id")!=null && db.queryForObject("select count(*) from creatives cr join campaigns c on c.id=cr.campaign_id where cr.id=? and cr.status='APPROVED' and c.current_creative_id=cr.id and c.approved=true",Integer.class,d.get("creative_id"))!=1)throw new IllegalArgumentException("Creative decision revoked");
         fraud.attempt(id, kind, synthetic || Boolean.TRUE.equals(d.get("synthetic")));
         int fresh = db.update("insert into events(decision_id,kind) values(?,?) on conflict do nothing", id, kind);
         if (fresh == 1 && kind.equals("impression") && d.get("state").equals("RESERVED")) {
@@ -126,7 +132,7 @@ class Platform {
         }
         if (fresh == 1 && kind.equals("click"))
             db.update("insert into outbox(event_type,aggregate_id) values('ClickRecorded',?)", id);
-        return db.queryForObject("select destination from campaigns where id=?", String.class, d.get("campaign_id"));
+        return d.get("creative_destination")!=null?(String)d.get("creative_destination"):db.queryForObject("select destination from campaigns where id=?", String.class, d.get("campaign_id"));
     }
 
     @Scheduled(fixedDelay = 30000)

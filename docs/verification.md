@@ -132,3 +132,88 @@ Compose and scripted lease-expiry simulation are not evidence of complete infras
 The final deployed backend and the five browser tests were checked again after adding automatic ASSESS audit history.
 The last backend run also explicitly verifies conversion replay and conflicting-attribution rejection in
 MockMvc/PostgreSQL. The test-only addition does not change the deployed application binary.
+
+## Invoicing, payment reconciliation and publisher settlement continuation
+
+Executed final financial verification:
+
+```sh
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+DOCKER_HOST=unix:///Users/MWGBH/.orbstack/run/docker.sock \
+mvn -f backend/pom.xml verify
+```
+
+**51 backend tests passed**, zero failures/errors/skips: DomainTest 5, JwtSignatureTest 1, MigrationHistoryTest 1, PacingAndIdentityTest 6, PlatformIntegrationTest 21, TreasuryIntegrationTest 16, KafkaRecoveryTest 1. The Kafka test is a multi-step real-broker recovery sequence, not counted as numerous independent tests. PostgreSQL locks, unique constraints, migrations, immutability triggers and rollback assertions use actual disposable databases.
+
+New exercised cases:
+
+* Sixteen concurrent invoice-close retries create one batch/document/line; later closes do not reassign existing ledger entries.
+* Injected invoice-line failure rolls back batch/header/audit/outbox; retrying the same request after repair succeeds.
+* Credit notes preserve the original invoice and line references; reversals before issuance produce linked gross/credit documents with zero net obligation. Publisher share rounding at 101 minor units is exactly 70, and reversal is exactly -70.
+* Partial receipt matching, identical/conflicting source references, microsecond timestamp normalization, retained overpayments, source returns and exact allocation idempotency are checked.
+* Full external returns of unmatched overpayments reconcile as a zero-net non-invoice pair.
+* Sixteen concurrent settlement attempts cannot reserve the same collected balance twice. Submitted unknown outcomes cannot be cancelled or expire into new spending rights. Confirmation retries use one instruction and one bank-evidence row.
+* Injected payout-state failure rolls back evidence, state/audit and event writes; the original bank reference succeeds once after repair. Explicit FAILED evidence releases the reservation, while cancelled keys never generate new instructions.
+* Funding returns before submission block the instruction without deleting the reservation. Reversals after payout retain history, expose recoupment/funding risk and offset future eligible earnings.
+* Cross-tenant invoice access and role-based mutation restrictions are tested. Receivables subtract reconciled cash, expose post-payment credits as negative receivables and return to zero after an observed refund is reconciled.
+* A separate schema is migrated to V3, seeded with a historical 101-unit charge and its reversal, then upgraded to V4. Both original billing entries survive, publisher revenue backfills to +70/-70, subjects are preserved and no cash is invented.
+* The real Kafka broker is paused for finance publication, then resumed. A trigger rejects the treasury-notification write after inbox insertion: both effects roll back, the failed record enters the durable SQL queue, and canonical replay succeeds after repair. Duplicate notifications create one inbox/projection; invoice/payment/settlement effects remain synchronous and are not repeated by consumers.
+
+Frontend/build verification: both Docker images built. Next.js production build and `npm --prefix frontend run typecheck` passed after adding DOM iterable types. `PLAYWRIGHT_BROWSERS_PATH=/tmp/contextads-browsers npx playwright test --workers=1 --reporter=line` passed **8 tests in 6.2 seconds** against the final Compose stack: previous OIDC/security workflows plus owned invoice/payment reads, publisher revenue/settlements and an idempotent administrative close through the UI. `python3 tests/smoke.py` passed against the upgraded backend. Accounting document printing is provided through browser print CSS; no PDF render verification is claimed.
+
+### Upgrade/recovery defects found and fixed
+
+The first live upgrade failed because historical V1–V3 SQL had been reformatted after deployment. Flyway correctly rejected their changed checksums; browser tests then reported backend-unavailable errors. The exact original files were recovered and CRC-checked against existing history. No schema-history repair, checksum rewrite, financial-row deletion or volume reset was performed. The successful live history is V1=160300381, V2=-1690407760, V3=370452549, V4=-692542901. MigrationHistoryTest now pins all four, and its final focused rerun passed. The database reports all four migrations successful.
+
+Other fixes: the frontend lacked `dom.iterable` types; imported bank times needed normalization to database precision for replay; accrued net charges had to be separated from outstanding receivables after collection; reserved funding shortfalls had to be distinguished from already-paid exposure. Backend HTTP readiness now gates new frontend startup.
+
+Local identity recovery was also verified. Keycloak's existing H2 store was backed up while stopped, copied into the new keycloak-data named volume and its container recreated. All five existing account subjects were compared before/after and remained unchanged. The stopped-store backup remains in an OS temporary directory; no credentials or tokens were printed or committed. This fixes local container-recreation ownership loss; it is not a production IdP backup/HA design.
+
+No real external money was collected, refunded or transferred. Bank facts and confirmations in integration tests are synthetic isolated fixtures. The running console uses explicit manual-bank evidence, not an automated provider. No tax/legal invoice compliance, cash liquidity forecast, production performance or enterprise readiness claim is made.
+
+## Versioned creative uploads and isolated publisher SDK continuation
+
+Final backend command (after building the source-pinned asset image):
+
+```sh
+docker compose build assets
+JAVA_HOME=$(/usr/libexec/java_home -v 21) \
+DOCKER_HOST=unix:///Users/MWGBH/.orbstack/run/docker.sock \
+mvn -f backend/pom.xml verify
+```
+
+**66 backend tests passed**, zero failures/errors/skips: CreativeIntegrationTest 10, ImageSafetyTest 5, DomainTest 5, JwtSignatureTest 1, KafkaRecoveryTest 1, MigrationHistoryTest 1, PacingAndIdentityTest 6, PlatformIntegrationTest 21 and TreasuryIntegrationTest 16. The existing financial, reconciliation, migration and Kafka failure-recovery tests remain in the executed suite.
+
+New coverage uses real disposable PostgreSQL and source-built MinIO:
+
+* PNG/JPEG normalization, rejection of executable/unsupported formats, truncated images, oversized input and dimension bombs; an appended script payload is absent from the normalized result. JPEG becomes a fresh decodable PNG.
+* PENDING images remain private; exact-version approval enables image decisions. Asset/campaign ownership and administrator-only review are enforced. Sixteen concurrent version creations produce distinct versions without inheriting approval or reserving spend.
+* Current-version rejection prevents new decisions, new frames and old impression acceptance. Snapshot destinations cannot be rewritten. Reviewing an older version cannot activate a new version; the legacy campaign alias cannot approve later versions.
+* HTML escaping, strict nonce CSP, opaque sandbox policy, scoped ancestors, token-purpose separation and public-only non-credentialed measurement CORS are checked.
+* A real object-store pause causes approval to fail without changing PENDING state; unpause/retry succeeds. Tampered and deleted S3 bytes fail integrity/availability checks. No object-store mock substitutes for these assertions.
+
+Build/deployment: the pinned source asset service and both application Docker images built successfully. Next.js production build and `npm --prefix frontend run typecheck` passed. Compose runs PostgreSQL, persistent Keycloak, Kafka, private asset storage, backend and frontend; the backend/assets/database/broker health checks passed. Live migration history remains V1=160300381, V2=-1690407760, V3=370452549, V4=-692542901 and V5=-2000512581, all successful. No history repair or data reset was performed. The V5 checksum is now pinned in the regression test.
+
+Portal browser command:
+
+```sh
+cd frontend
+PLAYWRIGHT_BROWSERS_PATH=/tmp/contextads-browsers \
+npx playwright test tests/workflow.spec.ts --workers=1 --reporter=line
+```
+
+**9 tests passed in 21.2 seconds** against the deployed Compose stack. The added workflow authenticates through real Keycloak, creates a campaign, verifies both the 2 MiB file and 3 MiB proxy limits, rejects disguised SVG, uploads a real PNG through the multipart proxy, creates version 2, opens the administrator's private preview, approves that exact version and verifies the advertiser sees APPROVED. Existing OIDC/tenant, domain, invoice and publisher revenue views remain covered. `python3 tests/smoke.py` also passed, including legacy initial-text approval compatibility.
+
+Independent external integration command:
+
+```sh
+PLAYWRIGHT_BROWSERS_PATH=/tmp/contextads-browsers python3 tests/isolated_renderer.py
+```
+
+**5 tests passed in 17.4 seconds.** The runner creates disposable PostgreSQL/S3/backend containers and a separate synthetic publisher HTTP origin, uses real Keycloak-issued identities, seeds a reserved example.com ownership fixture only into that disposable DB, and exercises actual context, serving, asset, render, SDK and measurement HTTP paths. Its credentials are not placed in publisher markup; temporary token metadata is private and removed. All three fixture containers/storage are removed on completion.
+
+Chromium verified literal creative text and real image pixels, denied parent DOM/localStorage access, and recorded one signed viewability signal through the actual serving API. Offscreen placement did not measure until scrolled into view. A real popup click used the stored approved destination with no opener; its reserved example.org destination was intercepted to avoid external advertising traffic. A manipulated redirect query did not change the destination. Rejection stopped rendering/new wins/old impressions. A wrong-purpose capability reached the eight-second unavailable fallback, removed its frame and recorded no impression. All fixture decisions were synthetic; no advertiser charges or external money transfers occurred.
+
+Defects found and fixed: the published MinIO image was unavailable (replaced by the reproducible upstream source build); Java test imports and a React unknown-value expression initially failed compilation; the Spring CORS source was not selected until explicitly named; UTF-8 was made explicit for frame HTML; servlet `/error` authentication masked public 410 as 401 (replaced by direct Problem Details handling); initial browser fixture coupling to a restarting portal was removed with a dedicated publisher origin. The proxy now preserves binary data/multipart boundaries and bounds reads, while initial campaign approval compatibility is limited to version 1 to avoid stale approval shortcuts.
+
+No high-load throughput/latency measurement, malware-scanner result, legal advertising-compliance certification or production-readiness claim was added. Image normalization is not semantic brand review. Quotas, orphan/retention cleanup, managed storage hardening, richer targeting/taxonomy, OIDC refresh/teams and complete deployment/observability remain outstanding as documented.

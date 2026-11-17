@@ -1,30 +1,26 @@
 # Acceptance status
 
-The complete product specification remains the target. Current verified foundations:
+The full supplied product specification remains the target; this table distinguishes implemented behavior from outstanding work.
 
-| Capability                                         | Status                                                                                                                                             |
-|----------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------|
-| Java 21 backend, Next.js and PostgreSQL migrations | Builds/tests verified                                                                                                                              |
-| OIDC                                               | Signed JWT resource server and real authorization-code browser login; role and subject ownership checks                                            |
-| Publisher websites                                 | Expiring DNS TXT proof, exclusive active claim, renewal/revoke, owner-scoped placements                                                            |
-| Page/placement authorization                       | Verified exact-host HTTPS page and owned active placement required                                                                                 |
-| Campaigns                                          | Create/list/approve/activate/pause, schedules and daily/lifetime budgets                                                                           |
-| Pacing                                             | Deterministic UTC EVEN and ACCELERATED admission                                                                                                   |
-| Accounting                                         | Transactional reservations, deduplication, expiry, lifetime/day reconciliation                                                                     |
-| Classification                                     | Six-topic deterministic single-label baseline; no taxonomy admin or measured quality corpus                                                        |
-| Rendering                                          | Escaped Sponsored text; external iframe SDK not delivered                                                                                          |
-| Measurement/attribution                            | Signed, deduplicated provisional signals and explicit owned click references                                                                       |
-| Reporting                                          | Advertiser provisional counters and daily ledgers; publisher settlement absent                                                                     |
-| Docker                                             | Local Compose with dedicated Keycloak and PostgreSQL; both application images built, complete Compose stack exercised with real OIDC browser tests |
-| Kubernetes                                         | Backend reference only; hardened full deployment remains outstanding                                                                               |
-| Full security/privacy operations                   | Teams, OIDC refresh rotation, rate limits, auditing, retention and comprehensive policies remain incomplete                                        |
-| Fraud validation/billing                           | Deterministic holds, explicit evidence review, immutable charges/reversals, audit and reconciliation; invoice/payment/settlement missing           |
-| Kafka                                              | Stable-ID outbox relay, durable inbox consumer, retries, SQL dead letters, replay and recovery tests; single-node local broker                     |
-| Redis/OLAP                                         | Deferred; PostgreSQL remains authoritative                                                                                                         |
-| Scale                                              | No 100k RPS / 50ms p99 / 99.99% claim verified                                                                                                     |
+| Capability | Current status |
+|---|---|
+| Java 21 / Spring Boot, Next.js App Router, Flyway | Builds and integration tests verified; historical migration checksums pinned |
+| OIDC | Real authorization-code login and signed JWT validation, roles and resource ownership; refresh rotation/teams missing |
+| Publisher verification | Expiring DNS TXT ownership, exclusive claims, renewal/revoke and owned placements |
+| Context analysis | Jsoup plus interpretable six-topic single-label baseline; richer taxonomy, multi-label quality corpus and policy management missing |
+| Campaigns | Creation/review/activation/pause, scheduling, daily/lifetime budgets and deterministic pacing |
+| Creatives | Immutable text/image versions, private bounded PNG/JPEG uploads, review previews, approval/rejection history and current-version checks |
+| Asset storage | Private source-built S3-compatible service, normalized pixels, exact integrity verification; malware scanner/quota/GC/CDN missing |
+| Rendering | Sandboxed opaque iframe, strict nonce CSP, scoped ancestors, Sponsored labels, bounded SDK loading/fallback and server-to-server publisher integration |
+| Measurement | Purpose-bound tokens, viewability signals, click redirects, idempotency and explicit click-reference conversions; no proof of human attention |
+| Fraud/billing | Deterministic holds, evidence-based manual validation, immutable charges/reversals, audit and reconciliation |
+| Invoices/payments | Immutable accounting invoices/credit notes and manual-bank receipt/return matching; provider automation and legal/tax templates missing |
+| Publisher settlement | Accrued/eligible/reserved/confirmed balances and durable manual instructions; no automatic bank execution |
+| Kafka | Versioned decision/finance topics, leased outbox, durable inbox, retry/DLQ/replay and recovery tests |
+| Reporting | Authoritative advertiser/publisher financial reads; richer time-series/product dashboards remain incomplete |
+| Docker | PostgreSQL, Keycloak, Kafka, private assets, backend and frontend; persistent data/identity volumes |
+| Kubernetes / observability | Reference deployment and basic metrics; complete hardened release, traces, dashboards/alerts remain incomplete |
+| Privacy/security operations | Context-only serving and isolated creatives; membership, retention/deletion, rate-limit policy and comprehensive compliance operations remain incomplete |
+| Scale | High-load/availability/relevance targets remain unverified; no 100k RPS, sub-50ms p99 or production-readiness claim |
 
-See identity-domains-pacing.md for precise consistency and propagation guarantees. Automated Testcontainers tests
-exercise actual PostgreSQL locks and accounting rather than mocked financial storage.
-
-The latest fraud/billing and event consistency model is in [fraud-billing-events.md](fraud-billing-events.md); it
-supersedes the earlier provisional-only billing and undelivered-outbox limitations.
+Current designs: [identity/domains/pacing](identity-domains-pacing.md), [fraud/billing/events](fraud-billing-events.md), [treasury](treasury.md), [creative security/SDK](creative-security-sdk.md). See [verification.md](verification.md) for exact executed checks and remaining limits.

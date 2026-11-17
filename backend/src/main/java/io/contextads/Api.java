@@ -66,12 +66,6 @@ class Api {
         return db.queryForList("select * from campaigns order by id limit 100");
     }
 
-    @PostMapping("/admin/creatives/{id}/approve")
-    Map<String, Object> approve(@PathVariable UUID id) {
-        db.update("update campaigns set approved=true where id=?", id);
-        return Map.of("approved", true);
-    }
-
     @PostMapping({"/context/pages", "/context/analyze"})
     Map<String, Object> page(@RequestBody Page page, Principal user) {
         var c = new Classifier().analyze(page.html());

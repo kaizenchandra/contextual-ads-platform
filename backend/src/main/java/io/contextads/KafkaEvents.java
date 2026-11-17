@@ -15,6 +15,8 @@ import org.springframework.util.backoff.FixedBackOff;
 @ConditionalOnProperty(name = "ads.events.enabled", havingValue = "true", matchIfMissing = true)
 class KafkaEvents {
     static final String TOPIC = "ads.events.v1";
+    static final String FINANCE_TOPIC="ads.finance.v1";
+    @Bean NewTopic financeTopic(){return new NewTopic(FINANCE_TOPIC,3,(short)1);}
 
     @Bean
     NewTopic adsEventsTopic() {
@@ -33,6 +35,13 @@ class KafkaEvents {
         return factory;
     }
 
+    @Bean TreasuryListener treasuryListener(TreasuryConsumer consumer){return new TreasuryListener(consumer);}
+    static class TreasuryListener {
+        private final TreasuryConsumer consumer;
+        TreasuryListener(TreasuryConsumer consumer){this.consumer=consumer;}
+        @KafkaListener(topics=FINANCE_TOPIC,groupId=TreasuryConsumer.NAME,id="treasury-observer")
+        public void receive(ConsumerRecord<String,String> record,Acknowledgment ack){consumer.consume(record.value());ack.acknowledge();}
+    }
     @Bean
     EventListener listener(EventProcessor processor) {
         return new EventListener(processor);

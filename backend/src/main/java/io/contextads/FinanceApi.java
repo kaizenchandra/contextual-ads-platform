@@ -47,12 +47,12 @@ class FinanceApi {
 
     @GetMapping("/billing/summary")
     Map<String, Object> summary(Principal user) {
-        return db.queryForMap("select coalesce(sum(case when kind='CHARGE' then amount else 0 end),0) validated_charges,coalesce(-sum(case when kind='REVERSAL' then amount else 0 end),0) reversed_charges,coalesce(sum(amount),0) net_receivable, 'USD' as currency,0 as invoiced,0 as paid from billing_entries where advertiser=?", user.getName());
+        return db.queryForMap("select coalesce(sum(case when kind='CHARGE' then amount else 0 end),0) validated_charges,coalesce(-sum(case when kind='REVERSAL' then amount else 0 end),0) reversed_charges,coalesce(sum(amount),0) net_charges,coalesce(sum(amount),0)-(select coalesce(sum(a.amount),0) from cash_allocations a join cash_records c on c.id=a.cash_id where c.advertiser=?) net_receivable, 'USD' as currency,(select coalesce(sum(total),0) from invoices where advertiser=?) as invoiced,(select coalesce(sum(a.amount),0) from cash_allocations a join cash_records c on c.id=a.cash_id where c.advertiser=?) as paid from billing_entries where advertiser=?", user.getName(),user.getName(),user.getName(),user.getName());
     }
 
     @GetMapping("/admin/events/status")
     Map<String, Object> delivery() {
-        return Map.of("events", db.queryForList("select event_id,event_type,state,attempts,created,published_at,last_error from outbox order by id desc limit 100"), "outbox", db.queryForList("select state,count(*) records,min(created) oldest from outbox group by state"), "unprocessedSent", db.queryForObject("select count(*) from outbox o where state='SENT' and not exists(select 1 from processed_events p where p.event_id=o.event_id and p.consumer_name='fraud-review-v1')", Long.class), "inbox", db.queryForObject("select count(*) from processed_events", Long.class), "deadLetters", db.queryForList("select id,topic,partition_id,offset_id,error_code,state,created from consumer_failures order by id desc limit 100"));
+        return Map.of("events", db.queryForList("select event_id,aggregate_type,event_type,state,attempts,created,published_at,last_error from outbox order by id desc limit 100"), "outbox", db.queryForList("select state,count(*) records,min(created) oldest from outbox group by state"), "unprocessedSent", db.queryForObject("select count(*) from outbox o where state='SENT' and not exists(select 1 from processed_events p where p.event_id=o.event_id and p.consumer_name=case when o.aggregate_type='DECISION' then 'fraud-review-v1' else 'treasury-observer-v1' end)", Long.class), "inbox", db.queryForObject("select count(*) from processed_events", Long.class), "deadLetters", db.queryForList("select id,topic,partition_id,offset_id,error_code,state,created from consumer_failures order by id desc limit 100"));
     }
 
     @PostMapping("/admin/events/{event}/replay")

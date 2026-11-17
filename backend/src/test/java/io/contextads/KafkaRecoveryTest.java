@@ -36,6 +36,7 @@ class KafkaRecoveryTest {
     EventProcessor processor;
     @Autowired
     Billing billing;
+    @Autowired Treasury treasury;
     @Autowired
     KafkaTemplate<String, String> template;
     @Autowired
@@ -162,6 +163,35 @@ class KafkaRecoveryTest {
         while (relay.publishOne()) {
         }
         await(() -> count("select count(*) from processed_events where event_id=?", lost) == 1);
+
+        // Finance stream: durable issuance commits even when the broker is unavailable.
+        billing.review(second,"VALIDATE","Independent finance integration evidence reviewed","admin-subject");
+        while(relay.publishOne()){}
+        var batch=treasury.issue("advertiser","kafka-finance-close","Finance evidence reviewed before invoice issuance","admin-subject");
+        UUID invoice=db.queryForObject("select id from invoices where kind='INVOICE'",UUID.class);
+        UUID financeEvent=db.queryForObject("select event_id from outbox where aggregate_type='INVOICE' and aggregate_id=?",UUID.class,invoice);
+        db.execute("create function fail_treasury_projection() returns trigger language plpgsql as $$ begin if NEW.entity_id='"+invoice+"'::uuid then raise exception 'injected finance consumer failure'; end if; return NEW; end $$");
+        db.execute("create trigger fail_treasury_projection before insert on treasury_notifications for each row execute function fail_treasury_projection()");
+        kafka.getDockerClient().pauseContainerCmd(kafka.getContainerId()).exec();
+        try{assertFalse(relay.publishOne());assertEquals(2,count("select count(*) from invoices"));}
+        finally{kafka.getDockerClient().unpauseContainerCmd(kafka.getContainerId()).exec();}
+        db.update("update outbox set available_at=now() where state='READY'");while(relay.publishOne()){}
+        await(()->count("select count(*) from consumer_failures where topic=? and body like ?",KafkaEvents.FINANCE_TOPIC,"%"+financeEvent+"%")>=1);
+        assertEquals(0,count("select count(*) from processed_events where consumer_name=? and event_id=?",TreasuryConsumer.NAME,financeEvent));
+        db.execute("drop trigger fail_treasury_projection on treasury_notifications");db.execute("drop function fail_treasury_projection()");
+        long financeFailure=db.queryForObject("select id from consumer_failures where topic=? and body like ? order by id desc limit 1",Long.class,KafkaEvents.FINANCE_TOPIC,"%"+financeEvent+"%");
+        processor.replay(financeFailure,"admin-subject","Finance projection fault repaired; replay canonical record");while(relay.publishOne()){}
+        await(()->count("select count(*) from treasury_notifications where event_id=?",financeEvent)==1);
+        processor.reset(financeEvent,"admin-subject","Controlled duplicate financial notification replay");while(relay.publishOne()){}
+        UUID receipt=(UUID)treasury.importCash("advertiser","integration-bank","receipt-1","RECEIPT",5,"USD",null,java.time.Instant.now(),"Observed bank receipt evidence verified","admin-subject").get("id");
+        treasury.match(receipt,invoice,"Receipt matched to the original invoice","admin-subject");
+        UUID settlement=(UUID)treasury.reserve("publisher","kafka-settlement",3,"Publisher funds and evidence verified","admin-subject").get("id");
+        treasury.submit(settlement,"Manual bank instruction independently authorized","admin-subject");
+        treasury.confirm(settlement,"PAID","integration-bank:payout-1",3,"USD","Bank payout confirmation evidence verified","admin-subject");
+        while(relay.publishOne()){}
+        await(()->count("select count(*) from outbox o where aggregate_type<>'DECISION' and not exists(select 1 from processed_events p where p.event_id=o.event_id and p.consumer_name=?)",TreasuryConsumer.NAME)==0);
+        assertEquals(1,count("select count(*) from payout_evidence"));assertEquals(3,Treasury.number(treasury.publisherSummary("publisher").get("settled")));
+        assertEquals(1,count("select count(*) from treasury_notifications where event_id=?",financeEvent));
 
     }
 }

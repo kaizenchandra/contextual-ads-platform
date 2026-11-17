@@ -9,6 +9,7 @@ jobs:
         with: { distribution: temurin, java-version: '21' }
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
+      - run: docker compose build assets
       - run: mvn -B -f backend/pom.xml verify
       - run: npm ci && npm run build && npm run typecheck
         working-directory: frontend
@@ -24,5 +25,6 @@ jobs:
       - run: npx playwright install --with-deps chromium && npx playwright test --workers=1
         working-directory: frontend
       - run: python3 tests/smoke.py
+      - run: python3 tests/isolated_renderer.py
       - if: always()
         run: docker compose down

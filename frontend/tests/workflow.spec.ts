@@ -64,3 +64,48 @@ test('administrator can inspect fraud and durable event delivery', async ({page}
     await page.getByRole('button', {name: 'Event delivery status', exact: true}).click();
     await expect(page.getByRole('heading', {name: 'Durable event delivery'})).toBeVisible();
 });
+
+test('publisher revenue and settlements use owned backend records',async({page})=>{
+ await login(page,'publisher');await page.getByRole('button',{name:'publisher',exact:true}).click();
+ await page.getByRole('button',{name:'Refresh treasury',exact:true}).click();
+ await expect(page.getByRole('status',{name:'Treasury status'})).toContainText('Loaded invoice');
+ await expect(page.getByRole('heading',{name:'Publisher revenue and settlement',exact:true})).toBeVisible();
+ await expect(page.getByText('"collectedEligible"',{exact:false})).toBeVisible();
+ expect((await page.request.get(base+'/api/billing/invoices')).status()).toBe(403);
+});
+test('advertiser can list its invoice and reconciled cash records',async({page})=>{
+ await login(page,'advertiser');await page.getByRole('button',{name:'Refresh treasury',exact:true}).click();
+ await expect(page.getByRole('status',{name:'Treasury status'})).toContainText('Loaded invoice');
+ expect((await page.request.get(base+'/api/billing/invoices')).status()).toBe(200);
+ expect((await page.request.get(base+'/api/billing/payments')).status()).toBe(200);
+});
+test('administrator issues an idempotent closing batch through the UI',async({browser,page})=>{
+ const advertiserContext=await browser.newContext();const advertiserPage=await advertiserContext.newPage();
+ await login(advertiserPage,'advertiser');const subject=(await (await advertiserPage.request.get(base+'/api/identity')).json()).subject;await advertiserContext.close();
+ await login(page,'admin');await page.getByRole('button',{name:'admin',exact:true}).click();
+ await page.getByLabel('Treasury evidence / reason',{exact:true}).fill('Synthetic browser test closes only existing validated ledger entries');
+ await page.getByLabel('Advertiser account subject',{exact:true}).fill(subject);
+ const key='browser-close-'+Date.now();await page.getByLabel('Invoice request key',{exact:true}).fill(key);
+ await page.getByRole('button',{name:'Issue documents',exact:true}).click();
+ await expect(page.getByRole('status',{name:'Treasury status'})).toContainText('batchId');
+ const first=JSON.parse((await page.getByRole('status',{name:'Treasury status'}).textContent())!);
+ const retry=await page.request.post(base+'/api/admin/invoices/issue',{headers:{origin:base},data:{advertiser:subject,requestKey:key,reason:'Retry synthetic browser financial closing request'}});
+ expect(retry.status()).toBe(200);expect((await retry.json()).batchId).toBe(first.batchId);
+});
+
+test('advertiser uploads normalized imagery and administrator reviews its immutable version',async({page,browser})=>{
+ await login(page,'advertiser');
+ const campaign=await page.request.post(base+'/api/campaigns',{headers:{origin:base},data:{name:'Upload browser '+Date.now(),headline:'Initial Java',category:'technology.java',destination:'https://example.org',budget:100,dailyBudget:100,bid:5}});expect(campaign.status()).toBe(201);const id=(await campaign.json()).id;
+ const oversized=await page.request.post(base+'/api/creatives/assets',{headers:{origin:base},multipart:{file:{name:'too-large.png',mimeType:'image/png',buffer:Buffer.alloc(2*1024*1024+1)}}});expect(oversized.status()).toBe(413);
+ const bounded=await page.request.post(base+'/api/creatives/assets',{headers:{origin:base,'Content-Type':'application/octet-stream'},data:Buffer.alloc(3*1024*1024+1)});expect(bounded.status()).toBe(413);
+ await page.getByLabel('Creative image (PNG/JPEG, max 2 MiB)',{exact:true}).setInputFiles({name:'disguised.png',mimeType:'image/png',buffer:Buffer.from('<svg><script>parent.attack=true</script></svg>')});
+ await page.getByRole('button',{name:'Upload image',exact:true}).click();await expect(page.getByRole('status',{name:'Creative status'})).toContainText('Only PNG and JPEG');
+ await page.getByLabel('Creative image (PNG/JPEG, max 2 MiB)',{exact:true}).setInputFiles('tests/fixtures/ad.png');
+ await page.getByRole('button',{name:'Upload image',exact:true}).click();await expect(page.getByRole('status',{name:'Creative status'})).toContainText('Normalized asset ID:');
+ const asset=(await page.getByRole('status',{name:'Creative status'}).textContent())!.split('Normalized asset ID: ')[1];
+ await page.getByLabel('Creative campaign ID',{exact:true}).fill(id);const headline='Reviewed uploaded image '+Date.now();
+ await page.getByLabel('Version headline',{exact:true}).fill(headline);await page.getByLabel('Version description',{exact:true}).fill('Synthetic upload and review browser test');await page.getByLabel('Version HTTPS destination',{exact:true}).fill('https://example.org/java');await page.getByLabel('Owned image asset',{exact:true}).selectOption(asset);
+ await page.getByRole('button',{name:'Create creative version',exact:true}).click();await expect(page.getByRole('status',{name:'Creative status'})).toContainText('Version 2');
+ const adminContext=await browser.newContext();try{const admin=await adminContext.newPage();await login(admin,'admin');await admin.getByRole('button',{name:'admin',exact:true}).click();await admin.getByRole('button',{name:'Refresh creatives',exact:true}).click();await admin.getByLabel('Creative review reason',{exact:true}).fill('Synthetic image and destination inspected');const row=admin.getByRole('article').filter({has:admin.getByRole('heading',{name:'Version 2 · '+headline,exact:true})});await expect(row.getByRole('img')).toBeVisible();await row.getByRole('button',{name:'approve version',exact:true}).click();await expect(row).toContainText('APPROVED');}finally{await adminContext.close();}
+ await page.getByRole('button',{name:'Refresh creatives',exact:true}).click();await expect(page.getByRole('article').filter({has:page.getByRole('heading',{name:'Version 2 · '+headline,exact:true})})).toContainText('APPROVED');
+});

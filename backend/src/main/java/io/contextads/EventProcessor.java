@@ -37,6 +37,7 @@ class EventProcessor {
         var rows = db.queryForList("select * from outbox where event_id=?", event.eventId());
         if (rows.isEmpty()) throw new IllegalArgumentException("Unrecognized durable event");
         var canonical = rows.getFirst();
+        if(!canonical.get("aggregate_type").equals("DECISION"))throw new IllegalArgumentException("Wrong event stream");
         if (!canonical.get("aggregate_id").equals(event.decisionId()) || !canonical.get("event_type").equals(event.eventType())
                 || ((Number) canonical.get("id")).longValue() != event.sequence() || ((Number) canonical.get("schema_version")).intValue() != event.schemaVersion()
                 || !((java.sql.Timestamp) canonical.get("created")).toInstant().equals(event.occurredAt()))
@@ -64,10 +65,11 @@ class EventProcessor {
         if (failures.isEmpty())
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "Dead letter not found");
         var row = failures.getFirst();
-        var event = parse((String) row.get("body"));
-        if (event.eventId() == null || db.queryForObject("select count(*) from outbox where event_id=?", Integer.class, event.eventId()) != 1)
-            throw new IllegalArgumentException("Cannot replay an event without a durable source");
-        reset(event.eventId(), actor, reason);
+        UUID eventId;
+        try{eventId=UUID.fromString(json.readTree((String)row.get("body")).path("eventId").asText());}
+        catch(Exception bad){throw new IllegalArgumentException("Cannot replay without a valid event identity");}
+        if(db.queryForObject("select count(*) from outbox where event_id=?",Integer.class,eventId)!=1)throw new IllegalArgumentException("Cannot replay an event without a durable source");
+        reset(eventId, actor, reason);
         db.update("update consumer_failures set state='REPLAYED' where id=?", failure);
     }
 

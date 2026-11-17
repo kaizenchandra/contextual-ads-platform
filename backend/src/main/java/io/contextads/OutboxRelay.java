@@ -42,7 +42,7 @@ class OutboxRelay {
                 update outbox set state='READY',available_at=clock_timestamp(),published_at=null
                 where id in (select o.id from outbox o where o.state='SENT'
                 and o.published_at<clock_timestamp()-interval '5 minutes'
-                and not exists(select 1 from processed_events p where p.event_id=o.event_id and p.consumer_name='fraud-review-v1')
+                and not exists(select 1 from processed_events p where p.event_id=o.event_id and p.consumer_name=case when o.aggregate_type='DECISION' then 'fraud-review-v1' else 'treasury-observer-v1' end)
                 order by o.published_at limit 20 for update skip locked)
                 """);
     }
@@ -61,8 +61,15 @@ class OutboxRelay {
         });
         if (row == null) return false;
         try {
-            var event = new IntegrationEvent((UUID) row.get("event_id"), ((Number) row.get("id")).longValue(), ((Number) row.get("schema_version")).intValue(), (String) row.get("event_type"), (UUID) row.get("aggregate_id"), ((java.sql.Timestamp) row.get("created")).toInstant());
-            kafka.send(KafkaEvents.TOPIC, event.decisionId().toString(), json.writeValueAsString(event)).get(5, TimeUnit.SECONDS);
+            UUID aggregate=(UUID)row.get("aggregate_id");
+            Object envelope;
+            String topic;
+            if(row.get("aggregate_type").equals("DECISION")){
+                envelope=new IntegrationEvent((UUID)row.get("event_id"),((Number)row.get("id")).longValue(),((Number)row.get("schema_version")).intValue(),(String)row.get("event_type"),aggregate,((java.sql.Timestamp)row.get("created")).toInstant());topic=KafkaEvents.TOPIC;
+            }else{
+                envelope=new FinanceEvent((UUID)row.get("event_id"),((Number)row.get("id")).longValue(),((Number)row.get("schema_version")).intValue(),(String)row.get("event_type"),(String)row.get("aggregate_type"),aggregate,((java.sql.Timestamp)row.get("created")).toInstant());topic=KafkaEvents.FINANCE_TOPIC;
+            }
+            kafka.send(topic,aggregate.toString(),json.writeValueAsString(envelope)).get(5,TimeUnit.SECONDS);
             // Crash after broker ACK but before this update causes safe duplicate publication.
             db.update("update outbox set state='SENT',published_at=clock_timestamp(),lease_token=null,lease_until=null,last_error=null where id=? and lease_token=?", row.get("id"), lease);
             metrics.counter("ads.outbox.published").increment();

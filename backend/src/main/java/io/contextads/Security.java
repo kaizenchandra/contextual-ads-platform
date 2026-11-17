@@ -43,19 +43,26 @@ class Security {
         var converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> roles(jwt).stream()
                 .<org.springframework.security.core.GrantedAuthority>map(role -> new SimpleGrantedAuthority("ROLE_" + role)).toList());
-        return http.csrf(c -> c.disable()) // Bearer-only APIs: no cookie authentication.
+        return http.cors(org.springframework.security.config.Customizer.withDefaults())
+                .headers(h->h.frameOptions(f->f.disable()).addHeaderWriter((request,response)->{if(!request.getRequestURI().startsWith("/api/v1/ads/render/"))response.setHeader("X-Frame-Options","DENY");}))
+                .csrf(c -> c.disable()) // Bearer-only APIs: no cookie authentication.
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a
-                        .requestMatchers("/actuator/health", "/api/v1/ads/impressions", "/api/v1/ads/click/**").permitAll()
+                        .requestMatchers("/actuator/health", "/api/v1/ads/impressions", "/api/v1/ads/click/**", "/api/v1/ads/render/**", "/api/v1/ads/assets/**", "/sdk/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/publishers/**", "/api/v1/context/**", "/api/v1/ads/decide").hasRole("PUBLISHER")
-                        .requestMatchers("/api/v1/campaigns/**", "/api/v1/analytics", "/api/v1/conversions", "/api/v1/billing/**").hasRole("ADVERTISER")
+                        .requestMatchers("/api/v1/campaigns/**", "/api/v1/analytics", "/api/v1/conversions", "/api/v1/billing/**", "/api/v1/creatives/**").hasRole("ADVERTISER")
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint((request, response, error) -> problem(response, 401))
                         .accessDeniedHandler((request, response, error) -> problem(response, 403)))
                 .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(converter))
                         .authenticationEntryPoint((request, response, error) -> problem(response, 401))
                         .accessDeniedHandler((request, response, error) -> problem(response, 403))).build();
+    }
+
+    @Bean org.springframework.web.cors.CorsConfigurationSource corsConfigurationSource(){
+        var config=new org.springframework.web.cors.CorsConfiguration();config.setAllowedOrigins(List.of("*"));config.setAllowedMethods(List.of("POST","OPTIONS"));config.setAllowedHeaders(List.of("Content-Type"));config.setAllowCredentials(false);config.setMaxAge(300L);
+        var source=new org.springframework.web.cors.UrlBasedCorsConfigurationSource();source.registerCorsConfiguration("/api/v1/ads/impressions",config);return source;
     }
 
     @Bean
