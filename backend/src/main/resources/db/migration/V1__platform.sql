@@ -1,0 +1,69 @@
+CREATE TABLE campaigns
+(
+    id          uuid PRIMARY KEY,
+    owner_name  text    NOT NULL,
+    name        text    NOT NULL,
+    category    text    NOT NULL,
+    headline    text    NOT NULL,
+    destination text    NOT NULL,
+    status      text    NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'ACTIVE', 'PAUSED')),
+    approved    boolean NOT NULL DEFAULT false,
+    budget      bigint  NOT NULL CHECK (budget > 0),
+    reserved    bigint  NOT NULL DEFAULT 0 CHECK (reserved >= 0),
+    spent       bigint  NOT NULL DEFAULT 0 CHECK (spent >= 0),
+    bid         bigint  NOT NULL CHECK (bid > 0),
+    CHECK (spent + reserved <= budget)
+);
+CREATE INDEX candidate_idx ON campaigns (category, status, approved);
+CREATE TABLE pages
+(
+    id         uuid PRIMARY KEY,
+    owner_name text             NOT NULL,
+    title      text             NOT NULL,
+    category   text             NOT NULL,
+    confidence double precision NOT NULL,
+    keywords   text             NOT NULL,
+    safe       boolean          NOT NULL,
+    version    int              NOT NULL DEFAULT 1
+);
+CREATE TABLE decisions
+(
+    id          uuid PRIMARY KEY,
+    campaign_id uuid        NOT NULL REFERENCES campaigns (id),
+    page_id     uuid        NOT NULL REFERENCES pages (id),
+    price       bigint      NOT NULL,
+    expires     timestamptz NOT NULL,
+    state       text        NOT NULL DEFAULT 'RESERVED' CHECK (state IN ('RESERVED', 'COMMITTED', 'RELEASED')),
+    created     timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE events
+(
+    decision_id uuid REFERENCES decisions (id),
+    kind        text        NOT NULL,
+    created     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (decision_id, kind)
+);
+CREATE TABLE movements
+(
+    id          bigserial PRIMARY KEY,
+    decision_id uuid        NOT NULL REFERENCES decisions (id),
+    kind        text        NOT NULL,
+    amount      bigint      NOT NULL,
+    created     timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (decision_id, kind)
+);
+CREATE TABLE outbox
+(
+    id           bigserial PRIMARY KEY,
+    event_type   text        NOT NULL,
+    aggregate_id uuid        NOT NULL,
+    created      timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE conversions
+(
+    owner_name  text        NOT NULL,
+    external_id text        NOT NULL,
+    decision_id uuid        NOT NULL REFERENCES decisions (id),
+    created     timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (owner_name, external_id)
+);

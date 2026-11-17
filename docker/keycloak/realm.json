@@ -1,0 +1,174 @@
+{
+  "realm": "contextads",
+  "enabled": true,
+  "sslRequired": "external",
+  "roles": {
+    "client": {
+      "contextads-api": [
+        {
+          "name": "ADVERTISER"
+        },
+        {
+          "name": "PUBLISHER"
+        },
+        {
+          "name": "ADMIN"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "contextads-api",
+      "enabled": true,
+      "bearerOnly": true
+    },
+    {
+      "clientId": "contextads-web",
+      "enabled": true,
+      "secret": "local-web-secret-change-me",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://localhost:3006/api/auth/callback/keycloak"
+      ],
+      "webOrigins": [
+        "http://localhost:3006"
+      ],
+      "protocolMappers": [
+        {
+          "name": "api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "contextads-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "contextads-test",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "contextads-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "advertiser",
+      "enabled": true,
+      "firstName": "advertiser",
+      "lastName": "Local",
+      "email": "advertiser@contextads.invalid",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "advertiser-dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "contextads-api": [
+          "ADVERTISER"
+        ]
+      }
+    },
+    {
+      "username": "publisher",
+      "enabled": true,
+      "firstName": "publisher",
+      "lastName": "Local",
+      "email": "publisher@contextads.invalid",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "publisher-dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "contextads-api": [
+          "PUBLISHER"
+        ]
+      }
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "firstName": "admin",
+      "lastName": "Local",
+      "email": "admin@contextads.invalid",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin-dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "contextads-api": [
+          "ADMIN"
+        ]
+      }
+    },
+    {
+      "username": "advertiser2",
+      "enabled": true,
+      "firstName": "advertiser2",
+      "lastName": "Local",
+      "email": "advertiser2@contextads.invalid",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "advertiser2-dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "contextads-api": [
+          "ADVERTISER"
+        ]
+      }
+    },
+    {
+      "username": "publisher2",
+      "enabled": true,
+      "firstName": "publisher2",
+      "lastName": "Local",
+      "email": "publisher2@contextads.invalid",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "publisher2-dev",
+          "temporary": false
+        }
+      ],
+      "clientRoles": {
+        "contextads-api": [
+          "PUBLISHER"
+        ]
+      }
+    }
+  ]
+}

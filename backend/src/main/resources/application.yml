@@ -1,0 +1,52 @@
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 80
+spring:
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/ads}
+    username: ${DATABASE_USER:ads}
+    password: ${DATABASE_PASSWORD:local-only}
+    hikari:
+      maximum-pool-size: 16
+      connection-timeout: 1000
+  task:
+    scheduling:
+      pool:
+        size: 3
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9096}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+      properties:
+        enable.idempotence: true
+        max.block.ms: 3000
+        delivery.timeout.ms: 4000
+        request.timeout.ms: 2000
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      max-poll-records: 25
+      properties:
+        max.partition.fetch.bytes: 1048576
+    admin:
+      fail-fast: false
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+ads:
+  secret: ${ADS_SECRET:development-only-change-before-deployment-123456}
+  oidc:
+    issuer: ${OIDC_ISSUER:http://localhost:8186/realms/contextads}
+    jwk-set-uri: ${OIDC_JWKS:http://localhost:8186/realms/contextads/protocol/openid-connect/certs}
+    audience: contextads-api
